@@ -90,10 +90,40 @@ function getGeminiUrl() {
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('チャットボット設定')
-    .addItem('プロンプト自動生成', 'generateGeminiPrompt')
-    .addSeparator()
+    .addItem('キャッシュをクリア', 'clearCache')
     .addItem('設定シートを初期化', 'reinitializeSettingsSheet')
     .addToUi();
+}
+
+/**
+ * キャッシュをクリア
+ * 会話履歴のキャッシュを削除する
+ */
+function clearCache() {
+  try {
+    const cache = CacheService.getScriptCache();
+    cache.remove(CONFIG.CACHE.KEY);
+    
+    // 成功メッセージを表示
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      'キャッシュをクリアしました。会話履歴がリセットされました。',
+      'キャッシュクリア完了',
+      3
+    );
+    
+    console.log('キャッシュクリア実行: ' + new Date().toLocaleString('ja-JP'));
+  } catch (error) {
+    console.error('キャッシュクリアエラー:', error);
+    
+    // エラーメッセージを表示
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      'キャッシュのクリアに失敗しました: ' + error.message,
+      'エラー',
+      5
+    );
+    
+    throw error;
+  }
 }
 
 /**
@@ -369,7 +399,7 @@ function trimConversationHistory(history) {
 }
 
 /**
- * Gemini APIを呼び出す
+ * Gemini APIを呼び出す（リトライ機構付き）
  * @param {string} userId - ユーザーID
  * @param {Array} history - 会話履歴
  * @returns {string} AIの応答テキスト
@@ -384,24 +414,62 @@ function callGeminiAPI(userId, history) {
     muteHttpExceptions: true
   };
   
-  try {
-    const response = UrlFetchApp.fetch(getGeminiUrl(), options);
-    const responseCode = response.getResponseCode();
-    
-    if (responseCode !== 200) {
+  // リトライ設定
+  const maxRetries = 3;
+  const baseDelay = 1000; // 1秒
+  let lastError = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // リトライの場合は指数バックオフで待機
+      if (attempt > 0) {
+        const delay = baseDelay * Math.pow(2, attempt - 1);
+        console.log(`リトライ ${attempt}/${maxRetries - 1}: ${delay}ms 待機中...`);
+        Utilities.sleep(delay);
+      }
+      
+      const response = UrlFetchApp.fetch(getGeminiUrl(), options);
+      const responseCode = response.getResponseCode();
+      
+      // 成功
+      if (responseCode === 200) {
+        const responseJson = JSON.parse(response.getContentText());
+        return extractResponseText(responseJson);
+      }
+      
+      // リトライ可能なエラー（429: Too Many Requests, 503: Service Unavailable）
+      if (responseCode === 429 || responseCode === 503) {
+        lastError = new Error(`API一時エラー (${responseCode}): リトライします`);
+        console.warn(`リトライ可能なエラー: ${responseCode}`);
+        continue;
+      }
+      
+      // リトライ不可能なエラー
       console.error(`API エラー: ${responseCode}`);
       throw new Error(`${CONFIG.ERRORS.API_CALL_FAILED}: ${responseCode}`);
+      
+    } catch (error) {
+      lastError = error;
+      
+      // ネットワークエラーの場合はリトライ
+      if (error.toString().includes('UrlFetchApp') || 
+          error.toString().includes('Network') ||
+          error.toString().includes('Timeout')) {
+        console.warn(`ネットワークエラー (試行 ${attempt + 1}/${maxRetries}):`, error);
+        continue;
+      }
+      
+      // その他のエラーは即座に投げる
+      if (!error.message.includes('API一時エラー')) {
+        console.error('Gemini API呼び出しエラー:', error);
+        throw error;
+      }
     }
-    
-    const responseJson = JSON.parse(response.getContentText());
-    return extractResponseText(responseJson);
-  } catch (error) {
-    console.error('Gemini API呼び出しエラー:', error);
-    if (error.message.includes(CONFIG.ERRORS.API_CALL_FAILED)) {
-      throw error;
-    }
-    throw new Error(`${CONFIG.ERRORS.API_CALL_FAILED}: ${error.message}`);
   }
+  
+  // すべてのリトライが失敗した場合
+  console.error('すべてのリトライが失敗しました:', lastError);
+  throw new Error(`API呼び出しが${maxRetries}回失敗しました: ${lastError.message}`);
 }
 
 /**
@@ -435,146 +503,6 @@ function extractResponseText(responseJson) {
   return responseJson.candidates[0].content.parts[0].text;
 }
 
-/**
- * Gemini用プロンプトを自動生成
- * @returns {string} 生成されたプロンプト
- */
-function generateGeminiPrompt() {
-  try {
-    const sheet = getSpreadsheet().getSheetByName(CONFIG.SHEETS.PROMPT);
-    if (!sheet) {
-      throw new Error(`シート「${CONFIG.SHEETS.PROMPT}」が見つかりません`);
-    }
-    
-    const values = [
-      sheet.getRange('B2').getValue(),
-      sheet.getRange('B3').getValue(),
-      sheet.getRange('B4').getValue()
-    ].filter(v => v); // 空の値を除外
-    
-    if (values.length === 0) {
-      throw new Error('プロンプト生成に必要な情報が入力されていません');
-    }
-    
-    const baseText = `# タスクの説明：${values.join('、')}
-
-## 役割・目標
-あなたは、Gemini AIモデル用の効果的なプロンプトを自動生成するAIアシスタントです。目標は、ユーザーが指定したタスクに対して最適化された、明確で構造化されたプロンプトを作成することです。
-
-## 視点・対象
-- 主な対象：Gemini AIモデルを使用するユーザー
-- 二次的な対象：Gemini AIモデル自体（プロンプトの受け手として）
-
-## 制約条件
-1. 生成されるプロンプトは、Gemini AIモデルの特性と制限を考慮に入れたものであること（マルチモーダル機能、コードの理解と生成能力、長文脈処理など）
-2. プロンプトは明確で簡潔であること、ただし必要な詳細は省略しないこと
-3. 特定の構造（役割・目標、制約条件など）を含めること
-4. 倫理的で法的に問題のない内容であること
-5. Geminiの機能と制限を正確に反映すること（トークン制限、知識のカットオフ日など）
-
-## 処理手順 (Chain of Thought)
-1. ユーザーの入力を分析し、要求されているタスクを特定する
-2. タスクに適した役割と目標を定義する
-3. 対象となる視点や読者を決定する
-4. タスクに関連する制約条件をリストアップする
-5. タスクを完了するための具体的な手順を考案する
-6. 必要な入力情報を特定する
-7. 期待される出力形式を決定する
-8. 上記の要素を組み合わせて、構造化されたプロンプトを作成する
-9. プロンプトを見直し、明確さと簡潔さを確認する
-10. 必要に応じて微調整を行う
-
-## 入力文
-以下の形式で入力を受け付けます：
-
-[タスクの説明]のGemini用プロンプトを役割・目標、視点・対象、制約条件、処理手順(CoT)、入力文、出力文を考慮して作成して
-
-例：「レシピ生成」のGemini用プロンプトを役割・目標、視点・対象、制約条件、処理手順(CoT)、入力文、出力文を考慮して作成して
-
-## 出力文
-以下の構造に従ってプロンプトを生成します：
-
-# [タスク名] Gemini Prompt
-
-## 役割・目標
-[役割と目標の説明]
-
-## 視点・対象
-[視点と対象の列挙]
-
-## 制約条件
-1. [制約条件1]
-2. [制約条件2]
-...
-
-## 処理手順 (Chain of Thought)
-1. [手順1]
-2. [手順2]
-...
-
-## 入力文
-[必要な入力情報の説明]
-[入力例]
-
-## 出力文
-[期待される出力形式の説明]
-[出力例]
-
-このフォーマットに従って、要求されたタスクに最適化されたGemini用プロンプトを生成します。
-`;
-
-  const payload = {
-    'contents': [{
-      'parts': [{
-        'text': baseText
-      }]
-    }]
-  };
-
-  const options = {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify(payload)
-  };
-
-  try {
-    const response = UrlFetchApp.fetch(getGeminiUrl(), options);
-    const responseJson = JSON.parse(response.getContentText());
-    
-    const generatedPrompt = extractResponseText(responseJson);
-    sheet.getRange('B5').setValue(generatedPrompt);
-    
-    // 成功をユーザーに通知
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      'プロンプトが正常に生成されました',
-      '完了',
-      3
-    );
-    
-    return generatedPrompt;
-  } catch (error) {
-    console.error('プロンプト生成エラー:', error);
-    const errorMessage = `プロンプト生成エラー: ${error.message}`;
-    
-    // エラーをユーザーに通知
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      errorMessage,
-      'エラー',
-      5
-    );
-    
-    throw new Error(errorMessage);
-  }
-  } catch (error) {
-    console.error('プロンプト生成関数エラー:', error);
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      error.message,
-      'エラー',
-      5
-    );
-    throw error;
-  }
-}
 
 /**
  * 設定を取得
@@ -585,7 +513,10 @@ function getSettings() {
     const sheet = getSettingsSheet();
     const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
     
-    const settings = {};
+    // デフォルト設定から開始（すべての設定が確実に存在するようにする）
+    const settings = Object.assign({}, getDefaultSettings());
+    
+    // シートから取得した設定で上書き（空でない値のみ）
     data.forEach(row => {
       if (row[0] && row[1] !== '') {
         settings[row[0]] = row[1];
@@ -623,22 +554,30 @@ function getDefaultSettings() {
 
 /**
  * 設定を保存
- * @param {Object} settings - 保存する設定
+ * @param {Object} settings - 保存する設定（部分的な更新も可能）
  * @returns {boolean} 成功/失敗
  */
 function saveSettings(settings) {
   try {
     const sheet = getSettingsSheet();
+    
+    // 既存の設定を取得（デフォルト値も含む）
+    const currentSettings = getSettings();
+    
+    // 新しい設定を既存の設定にマージ
+    const mergedSettings = Object.assign({}, currentSettings, settings);
+    
     const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
     
-    // 設定値を更新
+    // マージされた設定値で更新
     data.forEach((row, index) => {
       const key = row[0];
-      if (key && settings.hasOwnProperty(key)) {
-        sheet.getRange(index + 2, 2).setValue(settings[key]);
+      if (key && mergedSettings.hasOwnProperty(key)) {
+        sheet.getRange(index + 2, 2).setValue(mergedSettings[key]);
       }
     });
     
+    console.log('設定を保存しました:', mergedSettings);
     return true;
   } catch (error) {
     console.error('設定の保存エラー:', error);
@@ -665,27 +604,159 @@ function clearConversationHistory(userId = null) {
 }
 
 /**
- * 会話をエクスポート
+ * 会話をエクスポート（複数形式対応）
  * @param {string} userId - ユーザーID
- * @returns {Object} エクスポートデータ
+ * @param {string} format - エクスポート形式（'json', 'csv', 'text', 'drive'）
+ * @returns {Object} エクスポート結果
  */
-function exportConversation(userId) {
+function exportConversation(userId, format = 'json') {
   try {
     const history = getConversationHistory();
     const userHistory = history[userId] || [];
     
-    return {
+    // ログからメッセージ詳細を取得
+    const logSheet = getLogSheet();
+    const logs = logSheet.getDataRange().getValues();
+    const userLogs = logs.filter(row => row[1] === userId).slice(1); // ヘッダーを除く
+    
+    const exportData = {
       userId: userId,
       exportDate: new Date().toISOString(),
-      messages: userHistory.map(msg => ({
+      messages: userHistory.map((msg, index) => ({
         role: msg.role,
         content: msg.parts[0].text,
-        timestamp: new Date().toISOString()
+        timestamp: userLogs[index] ? userLogs[index][0] : new Date().toISOString(),
+        tokenCount: userLogs[index] ? userLogs[index][4] : estimateTokenCount(msg.parts[0].text)
       }))
     };
+    
+    switch (format.toLowerCase()) {
+      case 'json':
+        return exportAsJson(exportData);
+      case 'csv':
+        return exportAsCsv(exportData);
+      case 'text':
+        return exportAsText(exportData);
+      case 'drive':
+        return exportToDrive(exportData, userId);
+      default:
+        throw new Error(`サポートされていない形式: ${format}`);
+    }
   } catch (error) {
     console.error('会話のエクスポートエラー:', error);
     throw error;
+  }
+}
+
+/**
+ * JSON形式でエクスポート
+ */
+function exportAsJson(data) {
+  return {
+    success: true,
+    format: 'json',
+    content: JSON.stringify(data, null, 2),
+    mimeType: 'application/json',
+    filename: `chat_export_${data.userId}_${Date.now()}.json`
+  };
+}
+
+/**
+ * CSV形式でエクスポート
+ */
+function exportAsCsv(data) {
+  const headers = ['タイムスタンプ', '役割', 'メッセージ', 'トークン数'];
+  const rows = [headers];
+  
+  data.messages.forEach(msg => {
+    rows.push([
+      msg.timestamp,
+      msg.role === 'user' ? 'ユーザー' : 'AI',
+      msg.content.replace(/"/g, '""'), // CSVエスケープ
+      msg.tokenCount
+    ]);
+  });
+  
+  const csv = rows.map(row => 
+    row.map(cell => `"${cell}"`).join(',')
+  ).join('\n');
+  
+  return {
+    success: true,
+    format: 'csv',
+    content: csv,
+    mimeType: 'text/csv',
+    filename: `chat_export_${data.userId}_${Date.now()}.csv`
+  };
+}
+
+/**
+ * テキスト形式でエクスポート
+ */
+function exportAsText(data) {
+  let text = `チャット履歴エクスポート\n`;
+  text += `ユーザーID: ${data.userId}\n`;
+  text += `エクスポート日時: ${data.exportDate}\n`;
+  text += `${'='.repeat(50)}\n\n`;
+  
+  data.messages.forEach(msg => {
+    const role = msg.role === 'user' ? '👤 ユーザー' : '🤖 AI';
+    text += `${role} (${msg.timestamp})\n`;
+    text += `${msg.content}\n`;
+    text += `トークン数: ${msg.tokenCount}\n`;
+    text += `${'-'.repeat(30)}\n\n`;
+  });
+  
+  return {
+    success: true,
+    format: 'text',
+    content: text,
+    mimeType: 'text/plain',
+    filename: `chat_export_${data.userId}_${Date.now()}.txt`
+  };
+}
+
+/**
+ * Google Driveにエクスポート
+ */
+function exportToDrive(data, userId) {
+  try {
+    // Google Docsドキュメントを作成
+    const doc = DocumentApp.create(`チャット履歴_${userId}_${new Date().toLocaleDateString('ja-JP')}`);
+    const body = doc.getBody();
+    
+    // タイトルと基本情報
+    const title = body.appendParagraph('チャット履歴');
+    title.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+    
+    body.appendParagraph(`ユーザーID: ${data.userId}`);
+    body.appendParagraph(`エクスポート日時: ${new Date().toLocaleString('ja-JP')}`);
+    body.appendParagraph('');
+    
+    // メッセージを追加
+    data.messages.forEach(msg => {
+      const role = msg.role === 'user' ? 'ユーザー' : 'AI';
+      const msgPara = body.appendParagraph(`【${role}】 ${msg.timestamp}`);
+      msgPara.setBold(true);
+      
+      body.appendParagraph(msg.content);
+      body.appendParagraph(`トークン数: ${msg.tokenCount}`);
+      body.appendParagraph('');
+    });
+    
+    // ドキュメントのURLを取得
+    const url = doc.getUrl();
+    
+    return {
+      success: true,
+      format: 'drive',
+      documentUrl: url,
+      documentId: doc.getId(),
+      message: `Google Docsにエクスポートしました: ${url}`
+    };
+  } catch (error) {
+    console.error('Drive エクスポートエラー:', error);
+    throw new Error('Google Driveへのエクスポートに失敗しました: ' + error.message);
   }
 }
 

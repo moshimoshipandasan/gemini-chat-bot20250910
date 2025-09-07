@@ -503,11 +503,12 @@ function applySettings() {
  */
 function applyFontSize(size) {
   const root = document.documentElement;
+  // より適切なフォントサイズに調整（デスクトップとモバイル両方に対応）
   const sizes = {
-    small: { xs: 24, sm: 28, base: 32, lg: 36, xl: 40 },
-    medium: { xs: 32, sm: 36, base: 40, lg: 44, xl: 48 },
-    large: { xs: 40, sm: 44, base: 48, lg: 52, xl: 56 },
-    xlarge: { xs: 48, sm: 52, base: 56, lg: 60, xl: 64 }
+    small: { xs: 12, sm: 13, base: 14, lg: 16, xl: 18 },
+    medium: { xs: 14, sm: 15, base: 16, lg: 18, xl: 20 },
+    large: { xs: 16, sm: 17, base: 18, lg: 20, xl: 24 },
+    xlarge: { xs: 18, sm: 20, base: 22, lg: 24, xl: 28 }
   };
   
   const selected = sizes[size] || sizes.medium;

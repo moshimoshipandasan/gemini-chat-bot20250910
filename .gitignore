@@ -6,6 +6,7 @@
 run-serena.ps1
 run-serena.cmd
 CLAUDE.md
+.claude
 
 # Node.js dependencies (if clasp is installed locally)
 node_modules/

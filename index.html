@@ -30,12 +30,12 @@
             --spacing-lg: 20px;
             --spacing-xl: 24px;
             
-            /* フォントサイズ（モバイルファースト - LINEアプリサイズ） */
-            --font-xs: 32px;
-            --font-sm: 36px;
-            --font-base: 40px;
-            --font-lg: 44px;
-            --font-xl: 48px;
+            /* フォントサイズ（適切なデフォルトサイズ） */
+            --font-xs: 14px;
+            --font-sm: 15px;
+            --font-base: 16px;
+            --font-lg: 18px;
+            --font-xl: 20px;
             
             /* その他 */
             --border-radius: 24px;
@@ -181,7 +181,7 @@
         
         /* タイムスタンプ */
         .message-time {
-            font-size: 28px;
+            font-size: 14px;
             color: var(--text-secondary);
             margin-top: var(--spacing-xs);
             padding: 0 var(--spacing-sm);
@@ -345,12 +345,12 @@
         /* タブレット向け調整 */
         @media (min-width: 768px) {
             :root {
-                /* フォントサイズを通常サイズに戻す */
+                /* フォントサイズ（デフォルトと同じに維持） */
                 --font-xs: 14px;
-                --font-sm: 16px;
-                --font-base: 18px;
-                --font-lg: 20px;
-                --font-xl: 24px;
+                --font-sm: 15px;
+                --font-base: 16px;
+                --font-lg: 18px;
+                --font-xl: 20px;
                 
                 /* スペーシングも調整 */
                 --spacing-xs: 4px;
@@ -576,11 +576,12 @@
     </div>
     
     <?!= HtmlService.createHtmlOutputFromFile('style.css').getContent(); ?>
-    <?!= HtmlService.createHtmlOutputFromFile('script').getContent(); ?>
     
     <script>
-        // サーバーから渡された設定を保存
+        // サーバーから渡された設定を先に保存（scriptロード前に設定）
         window.appSettings = <?!= settings ?>;
     </script>
+    
+    <?!= HtmlService.createHtmlOutputFromFile('script').getContent(); ?>
 </body>
 </html>
