@@ -1,0 +1,5 @@
+{
+  "scriptId": "YOUR_NEW_SCRIPT_ID_HERE",
+  "rootDir": "./minimal",
+  "fileExtension": "js"
+}

@@ -1,0 +1,387 @@
+<style>
+/* 設定モーダルのスタイル */
+.settings-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    animation: fadeIn 0.2s ease;
+}
+
+.settings-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: var(--white);
+    border-radius: var(--border-radius);
+    width: 90%;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    animation: slideUp 0.3s ease;
+}
+
+.settings-header {
+    padding: var(--spacing-lg);
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.settings-header h2 {
+    margin: 0;
+    font-size: var(--font-lg);
+    color: var(--text-primary);
+}
+
+.settings-close {
+    background: none;
+    border: none;
+    font-size: var(--font-xl);
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: var(--spacing-sm);
+}
+
+.settings-body {
+    padding: var(--spacing-lg);
+}
+
+.settings-group {
+    margin-bottom: var(--spacing-xl);
+}
+
+.settings-group h3 {
+    font-size: var(--font-base);
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-md);
+    font-weight: 500;
+}
+
+.settings-item {
+    margin-bottom: var(--spacing-lg);
+}
+
+.settings-label {
+    display: block;
+    font-size: var(--font-sm);
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.settings-select,
+.settings-input {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    font-size: var(--font-base);
+    font-family: inherit;
+    background-color: #f8f8f8;
+    transition: border-color var(--transition);
+}
+
+.settings-select:focus,
+.settings-input:focus {
+    outline: none;
+    border-color: var(--primary-green);
+    background-color: var(--white);
+}
+
+.settings-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.toggle-switch {
+    position: relative;
+    width: 60px;
+    height: 34px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 34px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 26px;
+    width: 26px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: var(--primary-green);
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(26px);
+}
+
+.settings-footer {
+    padding: var(--spacing-lg);
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+}
+
+.settings-button {
+    flex: 1;
+    padding: var(--spacing-md);
+    border: none;
+    border-radius: 12px;
+    font-size: var(--font-base);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.settings-save {
+    background-color: var(--primary-green);
+    color: white;
+}
+
+.settings-save:hover {
+    background-color: #05a648;
+}
+
+.settings-cancel {
+    background-color: #f0f0f0;
+    color: var(--text-primary);
+}
+
+.settings-cancel:hover {
+    background-color: #e0e0e0;
+}
+
+.color-picker {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.color-preview {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    border: 2px solid #e0e0e0;
+    cursor: pointer;
+}
+
+.color-input {
+    flex: 1;
+}
+
+/* タブレット以上での調整 */
+@media (min-width: 768px) {
+    .settings-content {
+        max-height: 90vh;
+    }
+    
+    .settings-modal h2 {
+        font-size: 24px;
+    }
+    
+    .settings-modal h3 {
+        font-size: 18px;
+    }
+    
+    .settings-label {
+        font-size: 14px;
+    }
+    
+    .settings-select,
+    .settings-input {
+        font-size: 16px;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -40%);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%);
+    }
+}
+</style>
+
+<div id="settings-modal" class="settings-modal">
+    <div class="settings-content">
+        <div class="settings-header">
+            <h2>設定</h2>
+            <button class="settings-close" onclick="closeSettings()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="settings-body">
+            <!-- 外観設定 -->
+            <div class="settings-group">
+                <h3>外観</h3>
+                
+                <div class="settings-item">
+                    <label class="settings-label">テーマ</label>
+                    <select id="theme-select" class="settings-select">
+                        <option value="default">デフォルト (青空)</option>
+                        <option value="dark">ダーク</option>
+                        <option value="sunset">サンセット</option>
+                        <option value="forest">フォレスト</option>
+                        <option value="ocean">オーシャン</option>
+                        <option value="lavender">ラベンダー</option>
+                        <option value="midnight">ミッドナイト</option>
+                        <option value="sakura">さくら</option>
+                        <option value="custom">カスタム</option>
+                    </select>
+                </div>
+                
+                <div class="settings-item">
+                    <label class="settings-label">文字サイズ</label>
+                    <select id="fontsize-select" class="settings-select">
+                        <option value="small">小</option>
+                        <option value="medium">中</option>
+                        <option value="large">大</option>
+                        <option value="xlarge">特大</option>
+                    </select>
+                </div>
+                
+                <div id="custom-colors" style="display: none;">
+                    <div class="settings-item">
+                        <label class="settings-label">背景色</label>
+                        <div class="color-picker">
+                            <div class="color-preview" id="bg-color-preview" onclick="document.getElementById('bg-color-input').click()"></div>
+                            <input type="color" id="bg-color-input" class="color-input" style="display: none;">
+                            <input type="text" id="bg-color-text" class="settings-input color-input" placeholder="#B3D9FF">
+                        </div>
+                    </div>
+                    
+                    <div class="settings-item">
+                        <label class="settings-label">ユーザーメッセージ色</label>
+                        <div class="color-picker">
+                            <div class="color-preview" id="user-color-preview" onclick="document.getElementById('user-color-input').click()"></div>
+                            <input type="color" id="user-color-input" class="color-input" style="display: none;">
+                            <input type="text" id="user-color-text" class="settings-input color-input" placeholder="#92E05D">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 動作設定 -->
+            <div class="settings-group">
+                <h3>動作</h3>
+                
+                <div class="settings-item">
+                    <div class="settings-toggle">
+                        <label class="settings-label" style="margin-bottom: 0;">タイピングインジケーター</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="typing-indicator-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="settings-item">
+                    <div class="settings-toggle">
+                        <label class="settings-label" style="margin-bottom: 0;">通知音</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="notification-sound-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="settings-item">
+                    <div class="settings-toggle">
+                        <label class="settings-label" style="margin-bottom: 0;">自動スクロール</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="auto-scroll-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="settings-item">
+                    <label class="settings-label">送信ショートカット</label>
+                    <select id="shortcut-select" class="settings-select">
+                        <option value="Enter">Enter</option>
+                        <option value="Ctrl+Enter">Ctrl + Enter</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- 高度な設定 -->
+            <div class="settings-group">
+                <h3>高度な設定</h3>
+                
+                <div class="settings-item">
+                    <div class="settings-toggle">
+                        <label class="settings-label" style="margin-bottom: 0;">メッセージ削除を許可</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="delete-message-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="settings-item">
+                    <label class="settings-label">最大履歴表示数</label>
+                    <input type="number" id="max-history-input" class="settings-input" min="10" max="200" step="10" value="50">
+                </div>
+            </div>
+            
+            
+            <!-- データ管理 -->
+            <div class="settings-group">
+                <h3>データ管理</h3>
+                
+                <div class="settings-item">
+                    <button class="settings-button" style="background-color: #ff9800; color: white;" onclick="exportChat()">
+                        <i class="fas fa-download"></i> 会話をエクスポート
+                    </button>
+                </div>
+                
+                <div class="settings-item">
+                    <button class="settings-button" style="background-color: #f44336; color: white;" onclick="clearChat()">
+                        <i class="fas fa-trash"></i> 会話履歴をクリア
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="settings-footer">
+            <button class="settings-button settings-cancel" onclick="closeSettings()">キャンセル</button>
+            <button class="settings-button settings-save" onclick="saveSettings()">保存</button>
+        </div>
+    </div>
+</div>
+

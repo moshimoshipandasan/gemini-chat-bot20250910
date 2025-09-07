@@ -1,0 +1,781 @@
+<script>
+/**
+ * チャットアプリケーションのクライアントサイドコード
+ */
+
+// アプリケーション設定
+const APP_CONFIG = {
+  VOICE_RECOGNITION: {
+    LANG: 'ja-JP',
+    INTERIM_RESULTS: false,
+    MAX_ALTERNATIVES: 1
+  },
+  UI: {
+    SEND_DELAY: 100,
+    SCROLL_BEHAVIOR: 'smooth'
+  },
+  MESSAGES: {
+    ERROR_VOICE_NOT_SUPPORTED: '音声認識がサポートされていません',
+    ERROR_VOICE_PERMISSION: '音声認識の許可が必要です',
+    ERROR_SEND_FAILED: 'メッセージの送信に失敗しました',
+    ERROR_GENERAL: 'エラーが発生しました'
+  }
+};
+
+// グローバル変数
+let chatMessages;
+let chatForm;
+let chatInput;
+let voiceButton;
+let userId;
+let recognition;
+let isListening = false;
+
+/**
+ * アプリケーションの初期化
+ */
+function initializeApp() {
+  // DOM要素の取得
+  chatMessages = document.getElementById('chat-messages');
+  chatForm = document.getElementById('chat-form');
+  chatInput = document.getElementById('chat-input');
+  voiceButton = document.getElementById('voice-button');
+  
+  // ユーザーIDの生成
+  userId = generateUserId();
+  
+  // イベントリスナーの設定
+  setupEventListeners();
+  
+  // 音声認識の初期化
+  if (isVoiceRecognitionSupported()) {
+    initializeSpeechRecognition();
+  } else {
+    voiceButton.style.display = 'none';
+  }
+  
+  // 初期フォーカス
+  chatInput.focus();
+}
+
+/**
+ * ユーザーIDを生成
+ * @returns {string} ランダムなユーザーID
+ */
+function generateUserId() {
+  return Math.random().toString(36).substring(7) + Date.now().toString(36);
+}
+
+/**
+ * イベントリスナーの設定
+ */
+function setupEventListeners() {
+  // フォーム送信
+  chatForm.addEventListener('submit', handleFormSubmit);
+  
+  // 音声入力ボタン
+  voiceButton.addEventListener('click', toggleVoiceInput);
+  
+  
+  // ビューポートのリサイズ対応（キーボード表示時）
+  window.visualViewport?.addEventListener('resize', handleViewportResize);
+}
+
+/**
+ * フォーム送信の処理
+ * @param {Event} e - イベントオブジェクト
+ */
+function handleFormSubmit(e) {
+  e.preventDefault();
+  sendMessage();
+}
+
+/**
+ * 音声認識がサポートされているか確認
+ * @returns {boolean} サポート状況
+ */
+function isVoiceRecognitionSupported() {
+  return 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+}
+
+/**
+ * 音声認識の初期化
+ */
+function initializeSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  
+  // 設定
+  recognition.lang = APP_CONFIG.VOICE_RECOGNITION.LANG;
+  recognition.interimResults = APP_CONFIG.VOICE_RECOGNITION.INTERIM_RESULTS;
+  recognition.maxAlternatives = APP_CONFIG.VOICE_RECOGNITION.MAX_ALTERNATIVES;
+  
+  // イベントハンドラ
+  recognition.onresult = handleVoiceResult;
+  recognition.onend = handleVoiceEnd;
+  recognition.onerror = handleVoiceError;
+}
+
+/**
+ * 音声認識結果の処理
+ * @param {SpeechRecognitionEvent} event - 音声認識イベント
+ */
+function handleVoiceResult(event) {
+  const transcript = event.results[0][0].transcript;
+  chatInput.value = transcript;
+  sendMessage();
+}
+
+/**
+ * 音声認識終了の処理
+ */
+function handleVoiceEnd() {
+  isListening = false;
+  updateVoiceButtonState();
+}
+
+/**
+ * 音声認識エラーの処理
+ * @param {SpeechRecognitionErrorEvent} event - エラーイベント
+ */
+function handleVoiceError(event) {
+  console.error('音声認識エラー:', event.error);
+  
+  let errorMessage = APP_CONFIG.MESSAGES.ERROR_GENERAL;
+  if (event.error === 'not-allowed') {
+    errorMessage = APP_CONFIG.MESSAGES.ERROR_VOICE_PERMISSION;
+  }
+  
+  showError(errorMessage);
+  isListening = false;
+  updateVoiceButtonState();
+}
+
+/**
+ * 音声入力のトグル
+ */
+function toggleVoiceInput() {
+  if (!recognition) return;
+  
+  if (isListening) {
+    recognition.stop();
+  } else {
+    recognition.start();
+    isListening = true;
+    updateVoiceButtonState();
+  }
+}
+
+/**
+ * 音声ボタンの状態を更新
+ */
+function updateVoiceButtonState() {
+  if (isListening) {
+    voiceButton.classList.add('active');
+    voiceButton.innerHTML = '<i class="fas fa-stop"></i>';
+  } else {
+    voiceButton.classList.remove('active');
+    voiceButton.innerHTML = '<i class="fas fa-microphone"></i>';
+  }
+}
+
+/**
+ * メッセージを送信
+ */
+async function sendMessage() {
+  const message = chatInput.value.trim();
+  if (!message) return;
+  
+  // UIをクリア
+  chatInput.value = '';
+  chatInput.disabled = true;
+  
+  // ユーザーメッセージを表示
+  displayMessage(message, 'user');
+  
+  // ローディングインジケーターを表示（設定に応じて）
+  const loadingId = (window.appSettings?.['タイピングインジケーター'] !== 'false') 
+    ? showTypingIndicator() : null;
+  
+  try {
+    // AIからの応答を取得
+    google.script.run
+      .withSuccessHandler((response) => {
+        if (loadingId) removeTypingIndicator(loadingId);
+        handleAIResponse(response);
+      })
+      .withFailureHandler((error) => {
+        if (loadingId) removeTypingIndicator(loadingId);
+        handleSendError(error);
+      })
+      .processMessage(userId, message);
+  } catch (error) {
+    if (loadingId) removeTypingIndicator(loadingId);
+    handleSendError(error);
+  }
+}
+
+/**
+ * AIの応答を処理
+ * @param {string} response - AIからの応答
+ */
+function handleAIResponse(response) {
+  displayMessage(response, 'ai');
+  chatInput.disabled = false;
+  chatInput.focus();
+}
+
+/**
+ * 送信エラーを処理
+ * @param {Error} error - エラーオブジェクト
+ */
+function handleSendError(error) {
+  console.error('送信エラー:', error);
+  showError(APP_CONFIG.MESSAGES.ERROR_SEND_FAILED);
+  chatInput.disabled = false;
+  chatInput.focus();
+}
+
+/**
+ * メッセージを表示
+ * @param {string} text - メッセージテキスト
+ * @param {string} sender - 送信者（'user' または 'ai'）
+ */
+function displayMessage(text, sender) {
+  const messageContainer = document.createElement('div');
+  messageContainer.className = `message-container ${sender}`;
+  messageContainer.dataset.messageId = Date.now().toString();
+  messageContainer.dataset.sender = sender;
+  messageContainer.dataset.text = text.toLowerCase(); // 検索用
+  
+  const message = document.createElement('div');
+  message.className = `message ${sender}`;
+  message.textContent = text;
+  
+  const time = document.createElement('span');
+  time.className = 'message-time';
+  time.textContent = formatTime(new Date());
+  
+  // 削除ボタン（設定に応じて）
+  if (window.appSettings?.['メッセージ削除可能'] === 'true') {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'message-delete enabled';
+    deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
+    deleteBtn.onclick = () => deleteMessage(messageContainer.dataset.messageId);
+    messageContainer.appendChild(deleteBtn);
+  }
+  
+  messageContainer.appendChild(message);
+  messageContainer.appendChild(time);
+  chatMessages.appendChild(messageContainer);
+  
+  // 通知音（設定に応じて）
+  if (sender === 'ai' && window.appSettings?.['通知音'] === 'true') {
+    playNotificationSound();
+  }
+  
+  // スクロール
+  scrollToBottom();
+}
+
+/**
+ * 時刻をフォーマット
+ * @param {Date} date - 日付オブジェクト
+ * @returns {string} フォーマットされた時刻
+ */
+function formatTime(date) {
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+/**
+ * 最下部までスクロール
+ */
+function scrollToBottom() {
+  if (window.appSettings?.['自動スクロール'] !== 'false') {
+    setTimeout(() => {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }, APP_CONFIG.UI.SEND_DELAY);
+  }
+}
+
+/**
+ * エラーメッセージを表示
+ * @param {string} message - エラーメッセージ
+ */
+function showError(message) {
+  const errorDiv = document.createElement('div');
+  errorDiv.className = 'error-message';
+  errorDiv.textContent = message;
+  
+  document.body.appendChild(errorDiv);
+  
+  setTimeout(() => {
+    errorDiv.remove();
+  }, 3000);
+}
+
+/**
+ * ビューポートのリサイズを処理（キーボード表示時の調整）
+ */
+function handleViewportResize() {
+  if (window.visualViewport) {
+    const viewport = window.visualViewport;
+    document.documentElement.style.height = `${viewport.height}px`;
+    scrollToBottom();
+  }
+}
+
+/**
+ * タイピングインジケーターを表示
+ * @returns {string} インジケーターのID
+ */
+function showTypingIndicator() {
+  const indicatorId = 'typing-' + Date.now();
+  const container = document.createElement('div');
+  container.className = 'message-container ai';
+  container.id = indicatorId;
+  
+  const indicator = document.createElement('div');
+  indicator.className = 'message ai typing-indicator';
+  
+  for (let i = 0; i < 3; i++) {
+    const dot = document.createElement('span');
+    dot.className = 'typing-dot';
+    indicator.appendChild(dot);
+  }
+  
+  container.appendChild(indicator);
+  chatMessages.appendChild(container);
+  scrollToBottom();
+  
+  return indicatorId;
+}
+
+/**
+ * タイピングインジケーターを削除
+ * @param {string} indicatorId - インジケーターのID
+ */
+function removeTypingIndicator(indicatorId) {
+  const indicator = document.getElementById(indicatorId);
+  if (indicator) {
+    indicator.remove();
+  }
+}
+
+// DOMContentLoaded時に初期化
+document.addEventListener('DOMContentLoaded', initializeApp);
+
+/**
+ * 設定モーダルを開く
+ */
+function openSettings() {
+  const modal = document.getElementById('settings-modal');
+  if (modal) {
+    modal.style.display = 'block';
+    loadSettingsToUI();
+  }
+}
+
+/**
+ * 設定モーダルを閉じる
+ */
+function closeSettings() {
+  const modal = document.getElementById('settings-modal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+/**
+ * 設定をUIに読み込む
+ */
+function loadSettingsToUI() {
+  const settings = window.appSettings || {};
+  
+  // 各設定項目を反映
+  document.getElementById('theme-select').value = settings['テーマ'] || 'default';
+  document.getElementById('fontsize-select').value = settings['文字サイズ'] || 'medium';
+  document.getElementById('typing-indicator-toggle').checked = settings['タイピングインジケーター'] === 'true';
+  document.getElementById('notification-sound-toggle').checked = settings['通知音'] === 'true';
+  document.getElementById('auto-scroll-toggle').checked = settings['自動スクロール'] !== 'false';
+  document.getElementById('shortcut-select').value = settings['送信ショートカット'] || 'Enter';
+  document.getElementById('delete-message-toggle').checked = settings['メッセージ削除可能'] === 'true';
+  document.getElementById('max-history-input').value = settings['最大履歴表示数'] || '50';
+  
+  // カスタムカラー
+  if (settings['テーマ'] === 'custom') {
+    document.getElementById('custom-colors').style.display = 'block';
+    updateColorPickers(settings);
+  }
+  
+  // テーマ変更時のイベント
+  document.getElementById('theme-select').addEventListener('change', function(e) {
+    document.getElementById('custom-colors').style.display = 
+      e.target.value === 'custom' ? 'block' : 'none';
+  });
+}
+
+/**
+ * カラーピッカーを更新
+ */
+function updateColorPickers(settings) {
+  const bgColor = settings['背景色'] || '#B3D9FF';
+  const userColor = settings['ユーザーメッセージ色'] || '#92E05D';
+  
+  document.getElementById('bg-color-preview').style.backgroundColor = bgColor;
+  document.getElementById('bg-color-text').value = bgColor;
+  document.getElementById('bg-color-input').value = bgColor;
+  
+  document.getElementById('user-color-preview').style.backgroundColor = userColor;
+  document.getElementById('user-color-text').value = userColor;
+  document.getElementById('user-color-input').value = userColor;
+  
+  // カラーピッカーイベント
+  document.getElementById('bg-color-input').addEventListener('change', function(e) {
+    document.getElementById('bg-color-preview').style.backgroundColor = e.target.value;
+    document.getElementById('bg-color-text').value = e.target.value;
+  });
+  
+  document.getElementById('user-color-input').addEventListener('change', function(e) {
+    document.getElementById('user-color-preview').style.backgroundColor = e.target.value;
+    document.getElementById('user-color-text').value = e.target.value;
+  });
+}
+
+/**
+ * 設定を保存
+ */
+function saveSettings() {
+  const settings = {
+    'テーマ': document.getElementById('theme-select').value,
+    '文字サイズ': document.getElementById('fontsize-select').value,
+    'タイピングインジケーター': document.getElementById('typing-indicator-toggle').checked.toString(),
+    '通知音': document.getElementById('notification-sound-toggle').checked.toString(),
+    '自動スクロール': document.getElementById('auto-scroll-toggle').checked.toString(),
+    '送信ショートカット': document.getElementById('shortcut-select').value,
+    'メッセージ削除可能': document.getElementById('delete-message-toggle').checked.toString(),
+    '最大履歴表示数': document.getElementById('max-history-input').value
+  };
+  
+  // カスタムテーマの場合は色も保存
+  if (settings['テーマ'] === 'custom') {
+    settings['背景色'] = document.getElementById('bg-color-text').value;
+    settings['ユーザーメッセージ色'] = document.getElementById('user-color-text').value;
+  }
+  
+  // サーバーに保存
+  google.script.run
+    .withSuccessHandler(() => {
+      window.appSettings = settings;
+      applySettings();
+      closeSettings();
+      showError('設定を保存しました');
+    })
+    .withFailureHandler(() => {
+      showError('設定の保存に失敗しました');
+    })
+    .saveSettings(settings);
+}
+
+/**
+ * 設定を適用
+ */
+function applySettings() {
+  const settings = window.appSettings || {};
+  
+  // 文字サイズの適用
+  applyFontSize(settings['文字サイズ'] || 'medium');
+  
+  // テーマの適用
+  applyTheme(settings['テーマ'] || 'default', settings);
+  
+  // タイピングインジケーターの設定
+  APP_CONFIG.UI.SHOW_TYPING_INDICATOR = settings['タイピングインジケーター'] === 'true';
+  
+  // 自動スクロールの設定
+  APP_CONFIG.UI.AUTO_SCROLL = settings['自動スクロール'] !== 'false';
+}
+
+/**
+ * 文字サイズを適用
+ */
+function applyFontSize(size) {
+  const root = document.documentElement;
+  const sizes = {
+    small: { xs: 24, sm: 28, base: 32, lg: 36, xl: 40 },
+    medium: { xs: 32, sm: 36, base: 40, lg: 44, xl: 48 },
+    large: { xs: 40, sm: 44, base: 48, lg: 52, xl: 56 },
+    xlarge: { xs: 48, sm: 52, base: 56, lg: 60, xl: 64 }
+  };
+  
+  const selected = sizes[size] || sizes.medium;
+  root.style.setProperty('--font-xs', selected.xs + 'px');
+  root.style.setProperty('--font-sm', selected.sm + 'px');
+  root.style.setProperty('--font-base', selected.base + 'px');
+  root.style.setProperty('--font-lg', selected.lg + 'px');
+  root.style.setProperty('--font-xl', selected.xl + 'px');
+}
+
+/**
+ * テーマを適用
+ */
+function applyTheme(theme, settings) {
+  const root = document.documentElement;
+  
+  switch(theme) {
+    case 'dark':
+      root.style.setProperty('--bg-blue', '#1a2332');
+      root.style.setProperty('--header-blue', '#2d3e50');
+      root.style.setProperty('--text-primary', '#ffffff');
+      root.style.setProperty('--text-secondary', '#b0b0b0');
+      root.style.setProperty('--white', '#2d3e50');
+      root.style.setProperty('--light-green', '#5c8a3a');
+      root.style.setProperty('--error-red', '#ff6b6b');
+      break;
+    
+    case 'sunset':
+      root.style.setProperty('--bg-blue', '#FFA07A');
+      root.style.setProperty('--header-blue', '#FF7F50');
+      root.style.setProperty('--text-primary', '#4a0e0e');
+      root.style.setProperty('--text-secondary', '#8b4513');
+      root.style.setProperty('--white', '#FFDAB9');
+      root.style.setProperty('--light-green', '#FF6347');
+      root.style.setProperty('--error-red', '#DC143C');
+      break;
+    
+    case 'forest':
+      root.style.setProperty('--bg-blue', '#8FBC8F');
+      root.style.setProperty('--header-blue', '#228B22');
+      root.style.setProperty('--text-primary', '#0F4C0F');
+      root.style.setProperty('--text-secondary', '#2E8B57');
+      root.style.setProperty('--white', '#F0FFF0');
+      root.style.setProperty('--light-green', '#90EE90');
+      root.style.setProperty('--error-red', '#CD5C5C');
+      break;
+    
+    case 'ocean':
+      root.style.setProperty('--bg-blue', '#87CEEB');
+      root.style.setProperty('--header-blue', '#4682B4');
+      root.style.setProperty('--text-primary', '#191970');
+      root.style.setProperty('--text-secondary', '#483D8B');
+      root.style.setProperty('--white', '#F0F8FF');
+      root.style.setProperty('--light-green', '#00CED1');
+      root.style.setProperty('--error-red', '#FF6347');
+      break;
+    
+    case 'lavender':
+      root.style.setProperty('--bg-blue', '#E6E6FA');
+      root.style.setProperty('--header-blue', '#9370DB');
+      root.style.setProperty('--text-primary', '#4B0082');
+      root.style.setProperty('--text-secondary', '#6A5ACD');
+      root.style.setProperty('--white', '#FFF0F5');
+      root.style.setProperty('--light-green', '#DDA0DD');
+      root.style.setProperty('--error-red', '#C71585');
+      break;
+    
+    case 'midnight':
+      root.style.setProperty('--bg-blue', '#191970');
+      root.style.setProperty('--header-blue', '#000080');
+      root.style.setProperty('--text-primary', '#F8F8FF');
+      root.style.setProperty('--text-secondary', '#B0C4DE');
+      root.style.setProperty('--white', '#2F4F4F');
+      root.style.setProperty('--light-green', '#4169E1');
+      root.style.setProperty('--error-red', '#FF4500');
+      break;
+    
+    case 'sakura':
+      root.style.setProperty('--bg-blue', '#FFE4E1');
+      root.style.setProperty('--header-blue', '#FFB6C1');
+      root.style.setProperty('--text-primary', '#8B0051');
+      root.style.setProperty('--text-secondary', '#C71585');
+      root.style.setProperty('--white', '#FFF0F5');
+      root.style.setProperty('--light-green', '#FF69B4');
+      root.style.setProperty('--error-red', '#DC143C');
+      break;
+    
+    case 'custom':
+      if (settings) {
+        root.style.setProperty('--bg-blue', settings['背景色'] || '#B3D9FF');
+        root.style.setProperty('--light-green', settings['ユーザーメッセージ色'] || '#92E05D');
+        root.style.setProperty('--header-blue', settings['ヘッダー色'] || '#6FB7FF');
+        root.style.setProperty('--white', settings['AIメッセージ色'] || '#ffffff');
+      }
+      break;
+    
+    default:
+      // デフォルトテーマ
+      root.style.setProperty('--bg-blue', '#B3D9FF');
+      root.style.setProperty('--header-blue', '#6FB7FF');
+      root.style.setProperty('--text-primary', '#1a1a1a');
+      root.style.setProperty('--text-secondary', '#666');
+      root.style.setProperty('--white', '#ffffff');
+      root.style.setProperty('--light-green', '#92E05D');
+      root.style.setProperty('--error-red', '#ff4444');
+      break;
+  }
+}
+
+/**
+ * 会話をエクスポート
+ */
+function exportChat() {
+  google.script.run
+    .withSuccessHandler((data) => {
+      const jsonStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chat-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showError('会話をエクスポートしました');
+    })
+    .withFailureHandler(() => {
+      showError('エクスポートに失敗しました');
+    })
+    .exportConversation(userId);
+}
+
+/**
+ * 会話履歴をクリア
+ */
+function clearChat() {
+  if (confirm('本当に会話履歴をクリアしますか？この操作は取り消せません。')) {
+    google.script.run
+      .withSuccessHandler(() => {
+        chatMessages.innerHTML = '';
+        showError('会話履歴をクリアしました');
+      })
+      .withFailureHandler(() => {
+        showError('クリアに失敗しました');
+      })
+      .clearConversationHistory(userId);
+  }
+}
+
+// 初期化時に設定を適用
+const originalInitializeApp = initializeApp;
+initializeApp = function() {
+  originalInitializeApp();
+  applySettings();
+  setupKeyboardShortcuts();
+};
+
+/**
+ * メッセージを削除
+ */
+function deleteMessage(messageId) {
+  const messageEl = document.querySelector(`[data-message-id="${messageId}"]`);
+  if (messageEl) {
+    messageEl.style.animation = 'fadeOut 0.3s ease';
+    setTimeout(() => messageEl.remove(), 300);
+  }
+}
+
+/**
+ * 通知音を再生
+ */
+function playNotificationSound() {
+  const audio = new Audio('data:audio/wav;base64,UklGRgQFAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAABzAP//UwD//1EA//9UAP//UgD//1QA//9UAP//UwD//1UA//9SAP//UwD//1QA//9UAP//UwD//1QA//9TAP//VAD//1QA//9TAP//UwD//1QA//9SAP//VAD//1QA//9UAP//VQD//1MA//9TAP//UwD//1MA//9UAP//VAD//1MA//9SAP//UgD//1QA//9TAP//VAD//1QA//9TAP//VAD//1MA//9UAP//UwD//1UA//9TAP//UwD//1MA//9TAP//UgD//1QA//9TAP//UwD//1QA//9TAP//VAD//1QA//9TAP//VAD//1QA//9TAP//VAD//1MA//9UAP//VAD//1QA//9TAP//UwD//1MA//9TAP//VAD//1UA//9SAP//UwD//1QA//9UAP//UwD//1QA//9TAP//VQD//1MA//9TAP//VAD//1MA//9TAP//VAD//1MA//9UAP//VAD//1QA//9TAP//UwD//1MA//9UAP//UgD//1QA//9TAP//VAD//1QA//9TAP//VAD//1QA//9TAP//UwD//1QA//9SAP//UwD//1MA//9TAP//UwD//1QA//9SAP//VAD//1QA//9UAP//UwD//1MA//9TAP//UwD//1QA//9TAP//VAD//1QA//9UAP//UgD//1MA//9UAP//VAD//1QA//9SAP//UwD//1QA//9TAP//VAD//1MA//9SAP//VAD//1MA//9TAP//VAD//1QA//9SAP//UgD//1QA//9TAP//VAD//1MA//9UAP//UwD//1MA//9TAP//UwD//1QA//9TAP//UwD//1QA//9UAP//UwD//1QA//9TAP//VQD//1MA//9TAP//VAD//1MA//9UAP//VAD//1MA//9UAP//VAD//1MA//9TAP//UwD//1QA//9TAP//VAD//1MA//9UAP//UwD//1QA//9TAP//VAD//1QA//9TAP//UwD//1MA//9TAP//VAD//1MA//9UAP//UwD//1MA//9TAP//VAD//1QA//9UAP//UgD//1MA//9TAP//VAD//1QA//9SAP//VAD//1MA//9UAP//UgD//1QA//9TAP//UwD//1QA//9TAP//UwD//1QA//9TAP//VAD//1MA//9UAP//UwD//1MA//9TAP//VAD//1MA//9UAP//UwD//1QA//9TAP//VAD//1MA//9TAP//UwD//1MA//9TAP//VAD//1MA//9TAP//UwD//1QA//9TAP//VAD//1MA//9TAP//VAD//1MA//9UAP//UgD//1MA//9TAP//UwD//1QA//9TAP//VAD//1MA//9UAP//');
+  audio.volume = 0.3;
+  audio.play().catch(e => console.log('通知音の再生エラー:', e));
+}
+
+/**
+ * 検索バーを開く
+ */
+function openSearch() {
+  const searchBar = document.getElementById('search-bar');
+  const searchInput = document.getElementById('search-input');
+  searchBar.style.display = 'flex';
+  searchInput.focus();
+  searchInput.addEventListener('input', performSearch);
+}
+
+/**
+ * 検索バーを閉じる
+ */
+function closeSearch() {
+  const searchBar = document.getElementById('search-bar');
+  const searchInput = document.getElementById('search-input');
+  searchBar.style.display = 'none';
+  searchInput.value = '';
+  performSearch(); // 検索をクリア
+}
+
+/**
+ * 検索を実行
+ */
+function performSearch() {
+  const searchTerm = document.getElementById('search-input').value.toLowerCase();
+  const messages = document.querySelectorAll('.message-container');
+  
+  messages.forEach(msg => {
+    if (!searchTerm || msg.dataset.text.includes(searchTerm)) {
+      msg.style.display = 'flex';
+    } else {
+      msg.style.display = 'none';
+    }
+  });
+}
+
+/**
+ * キーボードショートカットを設定
+ */
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    // Ctrl+F or Cmd+F: 検索
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault();
+      openSearch();
+    }
+    
+    // Escape: 検索を閉じる
+    if (e.key === 'Escape') {
+      if (document.getElementById('search-bar').style.display === 'flex') {
+        closeSearch();
+      }
+      if (document.getElementById('settings-modal').style.display === 'block') {
+        closeSettings();
+      }
+    }
+    
+    // Ctrl+K or Cmd+K: 会話をクリア
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      if (confirm('会話履歴をクリアしますか？')) {
+        clearChat();
+      }
+    }
+    
+    // 送信ショートカット
+    if (document.activeElement === chatInput) {
+      const shortcut = window.appSettings?.['送信ショートカット'] || 'Enter';
+      if (shortcut === 'Enter' && e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        chatForm.dispatchEvent(new Event('submit'));
+      } else if (shortcut === 'Ctrl+Enter' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        chatForm.dispatchEvent(new Event('submit'));
+      }
+    }
+  });
+}
+
+// フェードアウトアニメーション用のCSS
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes fadeOut {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.8); }
+  }
+`;
+document.head.appendChild(style);
+
+
+</script>

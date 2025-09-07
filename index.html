@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#06c755">
+    <title>My Chatbot</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* CSS変数でテーマ管理 */
+        :root {
+            --primary-green: #06c755;
+            --light-green: #92E05D;
+            --bg-blue: #B3D9FF;
+            --header-blue: #6FB7FF;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666;
+            --white: #ffffff;
+            --shadow: rgba(0, 0, 0, 0.1);
+            --error-red: #ff4444;
+            
+            /* スペーシング */
+            --spacing-xs: 8px;
+            --spacing-sm: 12px;
+            --spacing-md: 16px;
+            --spacing-lg: 20px;
+            --spacing-xl: 24px;
+            
+            /* フォントサイズ（モバイルファースト - LINEアプリサイズ） */
+            --font-xs: 32px;
+            --font-sm: 36px;
+            --font-base: 40px;
+            --font-lg: 44px;
+            --font-xl: 48px;
+            
+            /* その他 */
+            --border-radius: 24px;
+            --transition: 0.2s ease;
+        }
+        
+        /* リセットとベース設定 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        html, body {
+            font-family: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: var(--font-base);
+            background-color: var(--bg-blue);
+            color: var(--text-primary);
+            height: 100%;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        /* メインコンテナ */
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            height: 100dvh; /* 動的ビューポート高さ */
+            position: relative;
+            background-color: var(--bg-blue);
+            width: 100%;
+            max-width: none; /* モバイルでは制限なし */
+        }
+        
+        /* ヘッダー */
+        #chat-header {
+            background-color: var(--header-blue);
+            color: var(--text-primary);
+            padding: var(--spacing-md) var(--spacing-lg);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 4px var(--shadow);
+            z-index: 100;
+            min-height: 72px;
+        }
+        
+        #chat-header h1 {
+            font-size: var(--font-xl);
+            font-weight: 500;
+            margin: 0;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: var(--spacing-sm);
+        }
+        
+        .header-btn {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 28px;
+            padding: var(--spacing-sm);
+            cursor: pointer;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color var(--transition);
+        }
+        
+        .header-btn:active {
+            background-color: rgba(0, 0, 0, 0.1);
+        }
+        
+        /* メッセージエリア */
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: var(--spacing-md); /* モバイルでは左右の余白を減らす */
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+        }
+        
+        /* iOS用セーフエリア対応 */
+        @supports (padding: env(safe-area-inset-top)) {
+            #chat-header {
+                padding-top: calc(var(--spacing-md) + env(safe-area-inset-top));
+            }
+            
+            #chat-messages {
+                padding-bottom: calc(var(--spacing-lg) + env(safe-area-inset-bottom));
+            }
+        }
+        
+        /* メッセージコンテナ */
+        .message-container {
+            margin-bottom: var(--spacing-sm);
+            display: flex;
+            flex-direction: column;
+            animation: messageSlide 0.3s ease-out;
+            position: relative;
+        }
+        
+        .message-container.user {
+            align-items: flex-end;
+        }
+        
+        .message-container.ai {
+            align-items: flex-start;
+        }
+        
+        /* メッセージバブル */
+        .message {
+            max-width: 80%; /* モバイルでより広く使用 */
+            padding: var(--spacing-md) var(--spacing-lg);
+            border-radius: var(--border-radius);
+            word-wrap: break-word;
+            font-size: var(--font-base);
+            line-height: 1.5; /* 読みやすさ向上 */
+            position: relative;
+            box-shadow: 0 1px 2px var(--shadow);
+        }
+        
+        .message.user {
+            background-color: var(--light-green);
+            color: var(--text-primary);
+            border-bottom-right-radius: var(--spacing-xs);
+        }
+        
+        .message.ai {
+            background-color: var(--white);
+            color: var(--text-primary);
+            border-bottom-left-radius: var(--spacing-xs);
+        }
+        
+        /* タイムスタンプ */
+        .message-time {
+            font-size: 28px;
+            color: var(--text-secondary);
+            margin-top: var(--spacing-xs);
+            padding: 0 var(--spacing-sm);
+        }
+        
+        /* 入力フォーム */
+        #chat-form {
+            background-color: var(--white);
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+            padding: var(--spacing-md);
+            display: flex;
+            gap: var(--spacing-sm);
+            align-items: center;
+            min-height: 80px;
+        }
+        
+        @supports (padding: env(safe-area-inset-bottom)) {
+            #chat-form {
+                padding-bottom: calc(var(--spacing-md) + env(safe-area-inset-bottom));
+            }
+        }
+        
+        #chat-input {
+            flex: 1;
+            border: 2px solid #e0e0e0;
+            border-radius: 28px;
+            padding: var(--spacing-sm) var(--spacing-lg);
+            font-size: var(--font-base);
+            font-family: inherit;
+            outline: none;
+            transition: border-color var(--transition);
+            min-height: 56px;
+            resize: none;
+        }
+        
+        #chat-input:focus {
+            border-color: var(--primary-green);
+        }
+        
+        #chat-input::placeholder {
+            font-size: var(--font-base);
+            opacity: 0.7;
+        }
+        
+        /* ボタン共通スタイル */
+        .chat-button {
+            background: none;
+            border: none;
+            color: var(--primary-green);
+            font-size: 32px;
+            padding: var(--spacing-sm);
+            cursor: pointer;
+            border-radius: 50%;
+            width: 56px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--transition);
+            flex-shrink: 0;
+        }
+        
+        .chat-button:active {
+            background-color: rgba(6, 199, 85, 0.1);
+            transform: scale(0.95);
+        }
+        
+        .chat-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        #voice-button.active {
+            color: var(--error-red);
+            animation: pulse 1s infinite;
+        }
+        
+        /* エラーメッセージ */
+        .error-message {
+            position: fixed;
+            top: calc(var(--spacing-xl) + env(safe-area-inset-top, 0));
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--error-red);
+            color: var(--white);
+            padding: var(--spacing-md) var(--spacing-xl);
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            font-size: var(--font-sm);
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        /* ローディングインジケーター */
+        .typing-indicator {
+            display: inline-flex;
+            gap: 6px;
+            padding: var(--spacing-md);
+        }
+        
+        .typing-dot {
+            width: 10px;
+            height: 10px;
+            background-color: var(--text-secondary);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        /* アニメーション */
+        @keyframes messageSlide {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -20px);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, 0);
+            }
+        }
+        
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+        
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: translateY(0);
+            }
+            30% {
+                transform: translateY(-10px);
+            }
+        }
+        
+        /* タブレット向け調整 */
+        @media (min-width: 768px) {
+            :root {
+                /* フォントサイズを通常サイズに戻す */
+                --font-xs: 14px;
+                --font-sm: 16px;
+                --font-base: 18px;
+                --font-lg: 20px;
+                --font-xl: 24px;
+                
+                /* スペーシングも調整 */
+                --spacing-xs: 4px;
+                --spacing-sm: 8px;
+                --spacing-md: 12px;
+                --spacing-lg: 16px;
+                --spacing-xl: 20px;
+            }
+            
+            #chat-container {
+                max-width: 768px;
+                margin: 0 auto;
+                box-shadow: 0 0 20px var(--shadow);
+            }
+            
+            #chat-messages {
+                padding: var(--spacing-lg);
+            }
+            
+            .message {
+                max-width: 70%;
+            }
+            
+            #chat-header {
+                min-height: 64px;
+            }
+            
+            #chat-form {
+                padding: var(--spacing-lg);
+                min-height: 70px;
+            }
+            
+            .chat-button {
+                width: 48px;
+                height: 48px;
+                font-size: var(--font-xl);
+            }
+            
+            .header-btn {
+                width: 44px;
+                height: 44px;
+                font-size: var(--font-lg);
+            }
+            
+            #chat-input {
+                min-height: 44px;
+                border-radius: 24px;
+                border-width: 2px;
+            }
+            
+            #chat-input::placeholder {
+                font-size: var(--font-base);
+            }
+            
+            .message {
+                border-radius: var(--border-radius);
+                padding: var(--spacing-md) var(--spacing-lg);
+            }
+            
+            .typing-dot {
+                width: 8px;
+                height: 8px;
+            }
+        }
+        
+        /* デスクトップ向け調整 */
+        @media (min-width: 1024px) {
+            #chat-container {
+                max-width: 800px;
+            }
+            
+            .message {
+                max-width: 65%;
+            }
+            
+            .message:hover {
+                box-shadow: 0 2px 8px var(--shadow);
+            }
+        }
+        
+        /* ダークモード対応 */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-blue: #1a2332;
+                --header-blue: #2d3e50;
+                --text-primary: #ffffff;
+                --text-secondary: #b0b0b0;
+                --white: #2d3e50;
+                --shadow: rgba(0, 0, 0, 0.3);
+            }
+            
+            #chat-input {
+                background-color: #2d3e50;
+                border-color: #3d4e60;
+                color: var(--text-primary);
+            }
+            
+            #chat-form {
+                background-color: #1a2332;
+                border-top-color: #3d4e60;
+            }
+        }
+        
+        /* アクセシビリティ向上 */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+        
+        /* フォーカス表示の改善 */
+        *:focus-visible {
+            outline: 2px solid var(--primary-green);
+            outline-offset: 2px;
+        }
+        
+        /* メッセージ削除ボタン */
+        .message-delete {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background-color: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            font-size: 16px;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--transition);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .message-container:hover .message-delete.enabled {
+            display: flex;
+        }
+        
+        .message-delete:hover {
+            background-color: #ff2222;
+            transform: scale(1.1);
+        }
+        
+        /* 検索バー */
+        .search-bar {
+            display: none;
+            padding: var(--spacing-md);
+            background-color: var(--white);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            gap: var(--spacing-sm);
+            align-items: center;
+        }
+        
+        .search-input {
+            flex: 1;
+            border: 2px solid #e0e0e0;
+            border-radius: 24px;
+            padding: var(--spacing-sm) var(--spacing-lg);
+            font-size: var(--font-base);
+            font-family: inherit;
+            outline: none;
+        }
+        
+        .search-close {
+            background: none;
+            border: none;
+            font-size: var(--font-lg);
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: var(--spacing-sm);
+        }
+        
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <header id="chat-header">
+            <h1>My Chatbot</h1>
+            <div class="header-actions">
+                <button class="header-btn" aria-label="検索" title="検索" onclick="openSearch()">
+                    <i class="fas fa-search"></i>
+                </button>
+                <button class="header-btn" aria-label="設定" title="設定" onclick="openSettings()">
+                    <i class="fas fa-cog"></i>
+                </button>
+            </div>
+        </header>
+        
+        <div id="search-bar" class="search-bar">
+            <input type="text" id="search-input" class="search-input" placeholder="メッセージを検索...">
+            <button class="search-close" onclick="closeSearch()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <main id="chat-messages" role="log" aria-live="polite" aria-label="チャット履歴">
+            <!-- メッセージはここに動的に追加される -->
+        </main>
+        
+        
+        <div style="position: relative;">
+            
+            <form id="chat-form" role="form" aria-label="メッセージ送信フォーム">
+                <button type="button" id="voice-button" class="chat-button" aria-label="音声入力" title="音声入力">
+                    <i class="fas fa-microphone"></i>
+                </button>
+                <input 
+                    type="text" 
+                    id="chat-input" 
+                    placeholder="メッセージを入力..." 
+                    aria-label="メッセージ入力"
+                    autocomplete="off"
+                    maxlength="1000"
+                >
+                <button type="submit" class="chat-button" aria-label="送信" title="送信">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <?!= HtmlService.createHtmlOutputFromFile('style.css').getContent(); ?>
+    <?!= HtmlService.createHtmlOutputFromFile('script').getContent(); ?>
+    
+    <script>
+        // サーバーから渡された設定を保存
+        window.appSettings = <?!= settings ?>;
+    </script>
+</body>
+</html>

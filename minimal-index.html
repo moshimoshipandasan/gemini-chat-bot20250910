@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini チャットボット</title>
+    <style>
+        /* 最小限のCSS - 20行程度 */
+        body {
+            font-family: 'メイリオ', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        #chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        #messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 8px;
+            border-radius: 3px;
+        }
+        .user { background: #e3f2fd; }
+        .ai { background: #f5f5f5; }
+        .error { color: red; }
+        #input-area {
+            display: flex;
+            gap: 10px;
+        }
+        #user-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 3px;
+            background: #2196F3;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover { background: #1976D2; }
+        button:disabled { background: #ccc; }
+        #loading { display: none; color: #666; }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <h2>Gemini チャットボット</h2>
+        <div id="messages"></div>
+        <div id="loading">返信を生成中...</div>
+        <div id="error-message" class="error"></div>
+        <div id="input-area">
+            <input type="text" id="user-input" placeholder="メッセージを入力..." />
+            <button id="send-btn" onclick="sendMessage()">送信</button>
+            <button id="clear-btn" onclick="clearChat()">クリア</button>
+        </div>
+    </div>
+
+    <script>
+        // ユーザーIDの生成・取得
+        function getUserId() {
+            let userId = localStorage.getItem('userId');
+            if (!userId) {
+                userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('userId', userId);
+            }
+            return userId;
+        }
+
+        // メッセージ送信
+        function sendMessage() {
+            const input = document.getElementById('user-input');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            // UIを更新
+            addMessageToUI('user', message);
+            input.value = '';
+            setLoading(true);
+            clearError();
+            
+            // サーバーに送信
+            google.script.run
+                .withSuccessHandler(response => {
+                    addMessageToUI('ai', response);
+                    setLoading(false);
+                })
+                .withFailureHandler(error => {
+                    showError('エラー: ' + error.message);
+                    setLoading(false);
+                })
+                .processMessage(getUserId(), message);
+        }
+
+        // メッセージをUIに追加
+        function addMessageToUI(role, text) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + role;
+            messageDiv.textContent = (role === 'user' ? 'あなた: ' : 'AI: ') + text;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // 会話履歴クリア
+        function clearChat() {
+            if (confirm('会話履歴をクリアしますか？')) {
+                document.getElementById('messages').innerHTML = '';
+                google.script.run
+                    .withSuccessHandler(() => {
+                        console.log('履歴クリア完了');
+                    })
+                    .clearHistory(getUserId());
+            }
+        }
+
+        // ローディング表示
+        function setLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+            document.getElementById('send-btn').disabled = show;
+        }
+
+        // エラー表示
+        function showError(message) {
+            document.getElementById('error-message').textContent = message;
+        }
+
+        function clearError() {
+            document.getElementById('error-message').textContent = '';
+        }
+
+        // Enterキーで送信
+        document.getElementById('user-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
