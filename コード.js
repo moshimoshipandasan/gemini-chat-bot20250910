@@ -35,7 +35,7 @@ const CONFIG = {
     PROMPT: 'プロンプト',
     LOG: 'ログ',
     SETTINGS: '設定',
-    SYSTEM_PROMPT_CELL: 'B5'
+    SYSTEM_PROMPT_CELL: 'A1'
   },
   
   // ログシートの列設定

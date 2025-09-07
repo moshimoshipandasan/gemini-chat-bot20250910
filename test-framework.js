@@ -4,23 +4,24 @@
  */
 
 // ===== テスト設定 =====
-const MINIMAL_TEST_CONFIG = {
+const TEST_CONFIG = {
   SHEETS: {
     PROMPT: 'プロンプト',
     LOG: 'ログ',
     TEST_RESULTS: 'テスト結果'  // テスト結果記録用
   },
   TEST_USER_ID: 'test_user_001',
-  TEST_TIMEOUT: 10000  // 10秒
+  TEST_TIMEOUT: 10000,  // 10秒
+  SYSTEM_PROMPT_CELL: 'A1' // メインコードと同じセル位置
 };
 
 // ===== スプレッドシート初期化 =====
 
 /**
- * テスト環境のセットアップ（ミニマル版用）
+ * テスト環境のセットアップ
  * スプレッドシートと必要なシートを作成
  */
-function setupMinimalTestEnvironment() {
+function setupTestEnvironment() {
   console.log('🔧 テスト環境をセットアップ中...');
   
   try {
@@ -28,19 +29,20 @@ function setupMinimalTestEnvironment() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     
     // 1. プロンプトシートの作成
-    let promptSheet = ss.getSheetByName(MINIMAL_TEST_CONFIG.SHEETS.PROMPT);
+    let promptSheet = ss.getSheetByName(TEST_CONFIG.SHEETS.PROMPT);
     if (!promptSheet) {
-      promptSheet = ss.insertSheet(MINIMAL_TEST_CONFIG.SHEETS.PROMPT);
-      promptSheet.getRange('A1').setValue('あなたは親切なAIアシスタントです。ユーザーの質問に丁寧に日本語で答えてください。');
+      promptSheet = ss.insertSheet(TEST_CONFIG.SHEETS.PROMPT);
+      // A1セルにプロンプトを設定（メインコードと同じ）
+      promptSheet.getRange(TEST_CONFIG.SYSTEM_PROMPT_CELL).setValue('あなたは親切なAIアシスタントです。ユーザーの質問に丁寧に日本語で答えてください。');
       console.log('✅ プロンプトシートを作成しました');
     } else {
       console.log('✓ プロンプトシートは既に存在します');
     }
     
     // 2. ログシートの作成
-    let logSheet = ss.getSheetByName(MINIMAL_TEST_CONFIG.SHEETS.LOG);
+    let logSheet = ss.getSheetByName(TEST_CONFIG.SHEETS.LOG);
     if (!logSheet) {
-      logSheet = ss.insertSheet(MINIMAL_TEST_CONFIG.SHEETS.LOG);
+      logSheet = ss.insertSheet(TEST_CONFIG.SHEETS.LOG);
       logSheet.getRange('A1:E1').setValues([['タイムスタンプ', 'ユーザーID', '役割', 'メッセージ', 'トークン数']]);
       logSheet.setFrozenRows(1);
       
@@ -57,9 +59,9 @@ function setupMinimalTestEnvironment() {
     }
     
     // 3. テスト結果シートの作成
-    let testSheet = ss.getSheetByName(MINIMAL_TEST_CONFIG.SHEETS.TEST_RESULTS);
+    let testSheet = ss.getSheetByName(TEST_CONFIG.SHEETS.TEST_RESULTS);
     if (!testSheet) {
-      testSheet = ss.insertSheet(MINIMAL_TEST_CONFIG.SHEETS.TEST_RESULTS);
+      testSheet = ss.insertSheet(TEST_CONFIG.SHEETS.TEST_RESULTS);
       testSheet.getRange('A1:F1').setValues([['実行日時', 'テスト名', '結果', '実行時間(ms)', 'エラー', '詳細']]);
       testSheet.setFrozenRows(1);
       console.log('✅ テスト結果シートを作成しました');
@@ -138,7 +140,7 @@ const assert = {
  * テスト結果を記録
  */
 function recordTestResult(testName, passed, duration, error = null, details = '') {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MINIMAL_TEST_CONFIG.SHEETS.TEST_RESULTS);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TEST_CONFIG.SHEETS.TEST_RESULTS);
   if (!sheet) return;
   
   const timestamp = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
@@ -248,16 +250,21 @@ function testLogging() {
     const testUserId = 'test_log_' + Date.now();
     const testMessage = 'これはテストメッセージです';
     
-    logToSheet(testUserId, 'user', testMessage);
+    // メインコードのlogChat関数を使用
+    logChat(testUserId, 'user', testMessage);
     
     // ログが記録されたか確認
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MINIMAL_TEST_CONFIG.SHEETS.LOG);
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TEST_CONFIG.SHEETS.LOG);
     const lastRow = sheet.getLastRow();
-    const lastLog = sheet.getRange(lastRow, 1, 1, 5).getValues()[0];
-    
-    assert.equals(lastLog[1], testUserId, 'ユーザーIDが一致しません');
-    assert.equals(lastLog[2], 'user', '役割が一致しません');
-    assert.equals(lastLog[3], testMessage, 'メッセージが一致しません');
+    if (lastRow > 1) { // ヘッダー行を考慮
+      const lastLog = sheet.getRange(lastRow, 1, 1, 5).getValues()[0];
+      
+      assert.equals(lastLog[1], testUserId, 'ユーザーIDが一致しません');
+      assert.equals(lastLog[2], 'user', '役割が一致しません');
+      assert.equals(lastLog[3], testMessage, 'メッセージが一致しません');
+    } else {
+      throw new Error('ログが記録されていません');
+    }
     
     const duration = Date.now() - startTime;
     console.log(`✅ ${testName} 成功 (${duration}ms)`);
@@ -283,23 +290,27 @@ function testCaching() {
     console.log(`🧪 ${testName} 実行中...`);
     
     const testUserId = 'test_cache_' + Date.now();
-    const testHistory = [
-      { role: 'user', content: 'テスト1' },
-      { role: 'model', content: 'レスポンス1' }
+    
+    // メインコードの形式に合わせた履歴構造
+    const testHistory = {};
+    testHistory[testUserId] = [
+      { role: 'user', parts: [{ text: 'テスト1' }] },
+      { role: 'model', parts: [{ text: 'レスポンス1' }] }
     ];
     
     // キャッシュに保存
-    saveConversationHistory(testUserId, testHistory);
+    saveConversationHistory(testHistory);
     
     // キャッシュから取得
-    const retrieved = getConversationHistory(testUserId);
-    assert.equals(retrieved.length, testHistory.length, '履歴の長さが一致しません');
-    assert.equals(retrieved[0].content, testHistory[0].content, 'メッセージ内容が一致しません');
+    const retrieved = getConversationHistory();
+    assert.exists(retrieved[testUserId], 'ユーザー履歴が存在しません');
+    assert.equals(retrieved[testUserId].length, 2, '履歴の長さが一致しません');
+    assert.equals(retrieved[testUserId][0].parts[0].text, 'テスト1', 'メッセージ内容が一致しません');
     
     // キャッシュクリアのテスト
-    clearHistory(testUserId);
-    const cleared = getConversationHistory(testUserId);
-    assert.equals(cleared.length, 0, 'キャッシュがクリアされていません');
+    clearConversationHistory(testUserId);
+    const clearedHistory = getConversationHistory();
+    assert.isTrue(!clearedHistory[testUserId] || clearedHistory[testUserId].length === 0, 'キャッシュがクリアされていません');
     
     const duration = Date.now() - startTime;
     console.log(`✅ ${testName} 成功 (${duration}ms)`);
@@ -337,7 +348,7 @@ function testProcessMessage() {
     assert.isTrue(response.length > 0, 'レスポンスが空です');
     
     // ログが記録されているか確認
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MINIMAL_TEST_CONFIG.SHEETS.LOG);
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TEST_CONFIG.SHEETS.LOG);
     const lastRow = sheet.getLastRow();
     assert.isTrue(lastRow > 1, 'ログが記録されていません');
     
@@ -365,7 +376,7 @@ function runAllTests() {
   console.log('=' .repeat(50));
   
   const tests = [
-    { name: '環境セットアップ', func: setupMinimalTestEnvironment },
+    { name: '環境セットアップ', func: setupTestEnvironment },
     { name: 'APIキー取得', func: testGetApiKey },
     { name: 'プロンプト取得', func: testGetSystemPrompt },
     { name: 'ログ記録', func: testLogging },
