@@ -353,4 +353,4 @@ gemini-chat-bot20250910/
 
 🚀 **Built with ❤️ using Google Apps Script and Gemini AI**
 
-*最終更新: 2025年1月*
+*最終更新: 2025年9月8日*
