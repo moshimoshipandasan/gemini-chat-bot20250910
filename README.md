@@ -54,7 +54,7 @@ LINE風のUIを持つ高機能なGemini AI搭載チャットボットアプリ�
 
 参照用スプレッドシート（テンプレート）をコピーしてください：
 
-📊 **[テンプレートスプレッドシート](https://docs.google.com/spreadsheets/d/1u07YmP0w4yXzwEWKOfqrdiC-xu-_aGoGlMV9jBIdJJY/edit?usp=sharing)**
+📊 **[テンプレートスプレッドシート](https://docs.google.com/spreadsheets/d/1u07YmP0w4yXzwEWKOfqrdiC-xu-_aGoGlMV9jBIdJJY/copy)**
 
 1. 上記リンクからスプレッドシートにアクセス
 2. `ファイル` → `コピーを作成` でコピー
